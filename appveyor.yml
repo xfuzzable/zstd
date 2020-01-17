@@ -7,7 +7,7 @@
   branches:
     only:
     - master
-    - appveyorTest
+    - /appveyor*/
     - /visual*/
   environment:
     matrix:
