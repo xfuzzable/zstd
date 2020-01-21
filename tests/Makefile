@@ -20,7 +20,6 @@
 
 ZSTDDIR = ../lib
 PRGDIR  = ../programs
-PYTHON ?= python3
 TESTARTEFACT := versionsTest
 
 DEBUGLEVEL ?= 1
@@ -69,6 +68,9 @@ MULTITHREAD_CPP = -DZSTD_MULTITHREAD
 MULTITHREAD_LD  = -pthread
 endif
 MULTITHREAD = $(MULTITHREAD_CPP) $(MULTITHREAD_LD)
+
+PYTHON ?= python3
+CP     ?= cp
 
 VOID = /dev/null
 ZSTREAM_TESTTIME ?= -T90s
@@ -224,7 +226,7 @@ decodecorpus : $(filter-out zstdc_zstd_compress.o, $(ZSTD_OBJECTS)) $(ZDICT_FILE
 
 symbols  : symbols.c zstd-dll
 ifneq (,$(filter Windows%,$(OS)))
-	cp $(ZSTDDIR)/dll/libzstd.dll .
+	$(CP) $(ZSTDDIR)/dll/libzstd.dll .
 	$(CC) $(FLAGS) $< -o $@$(EXT) -DZSTD_DLL_IMPORT=1 libzstd.dll
 else
 	$(CC) $(FLAGS) $< -o $@$(EXT) -Wl,-rpath=$(ZSTDDIR) $(ZSTDDIR)/libzstd.so   # broken on Mac

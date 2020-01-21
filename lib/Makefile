@@ -38,6 +38,7 @@ ifeq ($HAVE_COLORNEVER, 1)
 GREP_OPTIONS += --color=never
 endif
 GREP = grep $(GREP_OPTIONS)
+CP ?= cp
 
 ZSTDCOMMON_FILES := $(sort $(wildcard common/*.c))
 ZSTDCOMP_FILES := $(sort $(wildcard compress/*.c))
@@ -162,6 +163,7 @@ LIBZSTD = dll/libzstd-$(LIBVER_MAJOR).dll
 $(LIBZSTD): $(ZSTD_FILES)
 	@echo compiling dynamic library $(LIBVER)
 	$(CC) $(FLAGS) -DZSTD_DLL_EXPORT=1 -Wl,--out-implib,dll/libzstd.dll.a -shared $^ -o $@
+	$(CP) $(LIBZSTD) dll/libzstd.dll   # version-less library file
 
 else
 
