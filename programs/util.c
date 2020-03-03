@@ -145,19 +145,23 @@ int UTIL_setFileStat(const char *filename, stat_t *statbuf)
         return -1;
 
     /* set access and modification times */
-#if defined(_WIN32) || (PLATFORM_POSIX_VERSION < 200809L)
+    /* We check that st_mtime is a macro here in order to give us confidence
+     * that struct stat has a struct timespec st_mtim member. We need this
+     * check because there are some platforms that claim to be POSIX 2008
+     * compliant but which do not have st_mtim... */
+#if (PLATFORM_POSIX_VERSION >= 200809L) && defined(st_mtime)
+    {
+        /* (atime, mtime) */
+        struct timespec timebuf[2] = { {0, UTIME_NOW} };
+        timebuf[1] = statbuf->st_mtim;
+        res += utimensat(AT_FDCWD, filename, timebuf, 0);
+    }
+#else
     {
         struct utimbuf timebuf;
         timebuf.actime = time(NULL);
         timebuf.modtime = statbuf->st_mtime;
         res += utime(filename, &timebuf);
-    }
-#else
-    {
-        /* (atime, mtime) */
-        struct timespec timebuf[2] = { {0, UTIME_NOW} };
-        timebuf[1].tv_sec = statbuf->st_mtime;
-        res += utimensat(AT_FDCWD, filename, timebuf, 0);
     }
 #endif
 
@@ -274,7 +278,9 @@ U64 UTIL_getTotalFileSize(const char* const * fileNamesTable, unsigned nbFiles)
 static size_t readLineFromFile(char* buf, size_t len, FILE* file)
 {
     assert(!feof(file));
-    CONTROL( fgets(buf, (int) len, file) == buf );  /* requires success */
+    /* Work around Cygwin problem when len == 1 it returns NULL. */
+    if (len <= 1) return 0;
+    CONTROL( fgets(buf, (int) len, file) );
     {   size_t linelen = strlen(buf);
         if (strlen(buf)==0) return 0;
         if (buf[linelen-1] == '\n') linelen--;
@@ -362,16 +368,22 @@ UTIL_createFileNamesTable_fromFileName(const char* inputFileName)
     }
 }
 
-FileNamesTable*
-UTIL_assembleFileNamesTable(const char** filenames, size_t tableSize, char* buf)
+static FileNamesTable*
+UTIL_assembleFileNamesTable2(const char** filenames, size_t tableSize, size_t tableCapacity, char* buf)
 {
     FileNamesTable* const table = (FileNamesTable*) malloc(sizeof(*table));
     CONTROL(table != NULL);
     table->fileNames = filenames;
     table->buf = buf;
     table->tableSize = tableSize;
-    table->tableCapacity = tableSize;
+    table->tableCapacity = tableCapacity;
     return table;
+}
+
+FileNamesTable*
+UTIL_assembleFileNamesTable(const char** filenames, size_t tableSize, char* buf)
+{
+    return UTIL_assembleFileNamesTable2(filenames, tableSize, tableSize, buf);
 }
 
 void UTIL_freeFileNamesTable(FileNamesTable* table)
@@ -652,10 +664,11 @@ UTIL_createExpandedFNT(const char** inputNames, size_t nbIfns, int followLinks)
                 if (buf == NULL) return NULL;
     }   }   }
 
-    if (nbFiles == 0) { free(buf); return NULL; }
+    /* note : even if nbFiles==0, function returns a valid, though empty, FileNamesTable* object */
 
     {   size_t ifnNb, pos;
-        const char** const fileNamesTable = (const char**)malloc((nbFiles + 1) * sizeof(*fileNamesTable));
+        size_t const fntCapacity = nbFiles + 1;  /* minimum 1, allows adding one reference, typically stdin */
+        const char** const fileNamesTable = (const char**)malloc(fntCapacity * sizeof(*fileNamesTable));
         if (!fileNamesTable) { free(buf); return NULL; }
 
         for (ifnNb = 0, pos = 0; ifnNb < nbFiles; ifnNb++) {
@@ -663,7 +676,7 @@ UTIL_createExpandedFNT(const char** inputNames, size_t nbIfns, int followLinks)
             if (buf + pos > bufend) { free(buf); free((void*)fileNamesTable); return NULL; }
             pos += strlen(fileNamesTable[ifnNb]) + 1;
         }
-        return UTIL_assembleFileNamesTable(fileNamesTable, nbFiles, buf);
+        return UTIL_assembleFileNamesTable2(fileNamesTable, nbFiles, fntCapacity, buf);
     }
 }
 
@@ -671,6 +684,7 @@ UTIL_createExpandedFNT(const char** inputNames, size_t nbIfns, int followLinks)
 void UTIL_expandFNT(FileNamesTable** fnt, int followLinks)
 {
     FileNamesTable* const newFNT = UTIL_createExpandedFNT((*fnt)->fileNames, (*fnt)->tableSize, followLinks);
+    CONTROL(newFNT != NULL);
     UTIL_freeFileNamesTable(*fnt);
     *fnt = newFNT;
 }
@@ -891,7 +905,7 @@ int UTIL_countPhysicalCores(void)
     return numPhysicalCores;
 }
 
-#elif defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
+#elif defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__) || defined(__CYGWIN__)
 
 /* Use POSIX sysconf
  * see: man 3 sysconf */

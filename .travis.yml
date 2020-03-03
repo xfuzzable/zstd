@@ -31,7 +31,11 @@ matrix:
       script:
         - make check
 
-    - name: make test (complete)    # ~14mn
+    - name: make benchmarking
+      script:
+        - make benchmarking
+
+    - name: make test (complete)
       script:
         # DEVNULLRIGHTS : will request sudo rights to test permissions on /dev/null
         - DEVNULLRIGHTS=test make test
@@ -80,7 +84,7 @@ matrix:
         - make clean
         - make -j check MOREFLAGS="-Werror -DZSTD_NO_INLINE -DZSTD_STRIP_ERROR_STRINGS"
 
-    - name: cmake build check    # ~2mn
+    - name: cmake build and test check    # ~2mn
       script:
         - make cmakebuild
 
@@ -137,6 +141,13 @@ matrix:
         - make arminstall
         - make armfuzz
 
+    # Introduced to check compat with old toolchains, to prevent e.g. #1872
+    - name: ARM Build Test (on Trusty)
+      dist: trusty
+      script:
+        - make arminstall
+        - make armbuild
+
     - name: Qemu PPC + Fuzz Test    # ~13mn
       dist: trusty   # it seems ppc cross-compilation fails on "current"
       script:
@@ -152,9 +163,15 @@ matrix:
 
     # tests for master branch and cron job only
     - name: OS-X    # ~13mn
+      if: branch = master
       os: osx
       script:
         - make test
+
+    - name: zbuff test
+      if: branch = master
+      script:
+        - make test-zbuff
 
     - name: Versions Compatibility Test   # 11.5mn
       if: branch = master
@@ -168,11 +185,18 @@ matrix:
         - CC=clang-3.8 make tsan-test-zstream
         - CC=clang-3.8 make tsan-fuzztest
 
-    - name: PPC64    # ~13mn
+    - name: Qemu PPC64 + Fuzz test  # ~13mn
       if: branch = master
       script:
         - make ppcinstall
         - make ppc64fuzz
+
+    - name: PPC64LE + Fuzz test  # ~13mn
+      if: branch = master
+      arch: ppc64le
+      script:
+        - cat /proc/cpuinfo
+        - make test
 
     # note : we already have aarch64 tests on hardware
     - name: Qemu aarch64 + Fuzz Test (on Xenial)    # ~14mn

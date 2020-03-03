@@ -72,7 +72,7 @@ extern "C" {
 /*------   Version   ------*/
 #define ZSTD_VERSION_MAJOR    1
 #define ZSTD_VERSION_MINOR    4
-#define ZSTD_VERSION_RELEASE  4
+#define ZSTD_VERSION_RELEASE  5
 
 #define ZSTD_VERSION_NUMBER  (ZSTD_VERSION_MAJOR *100*100 + ZSTD_VERSION_MINOR *100 + ZSTD_VERSION_RELEASE)
 ZSTDLIB_API unsigned ZSTD_versionNumber(void);   /**< to check runtime library version */
@@ -274,7 +274,10 @@ typedef enum {
                               * Default level is ZSTD_CLEVEL_DEFAULT==3.
                               * Special: value 0 means default, which is controlled by ZSTD_CLEVEL_DEFAULT.
                               * Note 1 : it's possible to pass a negative compression level.
-                              * Note 2 : setting a level resets all other compression parameters to default */
+                              * Note 2 : setting a level does not automatically set all other compression parameters 
+                              *   to default. Setting this will however eventually dynamically impact the compression 
+                              *   parameters which have not been manually set. The manually set 
+                              *   ones will 'stick'. */
     /* Advanced compression parameters :
      * It's possible to pin down compression parameters to some specific values.
      * In which case, these values are no longer dynamically selected by the compressor */

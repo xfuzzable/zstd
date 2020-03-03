@@ -25,6 +25,7 @@
 #include <stdlib.h>       /* free */
 #include <stdio.h>        /* fgets, sscanf */
 #include <string.h>       /* strcmp */
+#undef NDEBUG
 #include <assert.h>
 #define ZSTD_STATIC_LINKING_ONLY  /* ZSTD_compressContinue, ZSTD_compressBlock */
 #include "fse.h"
@@ -365,6 +366,11 @@ static int basicUnitTests(U32 const seed, double compressibility)
         DISPLAYLEVEL(3, "%i (OK) \n", mcl);
     }
 
+    DISPLAYLEVEL(3, "test%3u : ZSTD_versionNumber : ", testNb++);
+    {   unsigned const vn = ZSTD_versionNumber();
+        DISPLAYLEVEL(3, "%u (OK) \n", vn);
+    }
+
     DISPLAYLEVEL(3, "test%3u : compress %u bytes : ", testNb++, (unsigned)CNBuffSize);
     {   ZSTD_CCtx* const cctx = ZSTD_createCCtx();
         if (cctx==NULL) goto _output_error;
@@ -388,9 +394,14 @@ static int basicUnitTests(U32 const seed, double compressibility)
     }
     DISPLAYLEVEL(3, "OK \n");
 
-
     DISPLAYLEVEL(3, "test%3i : ZSTD_getFrameContentSize test : ", testNb++);
     {   unsigned long long const rSize = ZSTD_getFrameContentSize(compressedBuffer, cSize);
+        if (rSize != CNBuffSize) goto _output_error;
+    }
+    DISPLAYLEVEL(3, "OK \n");
+
+    DISPLAYLEVEL(3, "test%3i : ZSTD_getDecompressedSize test : ", testNb++);
+    {   unsigned long long const rSize = ZSTD_getDecompressedSize(compressedBuffer, cSize);
         if (rSize != CNBuffSize) goto _output_error;
     }
     DISPLAYLEVEL(3, "OK \n");
@@ -427,6 +438,30 @@ static int basicUnitTests(U32 const seed, double compressibility)
     }   }
     DISPLAYLEVEL(3, "OK \n");
 
+    DISPLAYLEVEL(3, "test%3i : ZSTD_checkCParams : ", testNb++);
+    {
+        ZSTD_parameters params = ZSTD_getParams(3, 0, 0);
+        assert(!ZSTD_checkCParams(params.cParams));
+    }
+    DISPLAYLEVEL(3, "OK \n");
+
+    DISPLAYLEVEL(3, "test%3i : ZSTD_createDCtx_advanced and ZSTD_sizeof_DCtx: ", testNb++);
+    {
+        ZSTD_DCtx* const dctx = ZSTD_createDCtx_advanced(ZSTD_defaultCMem);
+        assert(dctx != NULL);
+        assert(ZSTD_sizeof_DCtx(dctx) != 0);
+        ZSTD_freeDCtx(dctx);
+    }
+    DISPLAYLEVEL(3, "OK \n");
+
+    DISPLAYLEVEL(3, "test%3i : misc unaccounted for zstd symbols : ", testNb++);
+    {
+        DISPLAYLEVEL(3, "%p ", ZSTD_getDictID_fromDDict);
+        DISPLAYLEVEL(3, "%p ", ZSTD_createDStream_advanced);
+        DISPLAYLEVEL(3, "%p ", ZSTD_copyDCtx);
+        DISPLAYLEVEL(3, "%p ", ZSTD_nextInputType);
+    }
+    DISPLAYLEVEL(3, ": OK \n");
 
     DISPLAYLEVEL(3, "test%3i : decompress with null dict : ", testNb++);
     {   ZSTD_DCtx* const dctx = ZSTD_createDCtx(); assert(dctx != NULL);
@@ -487,6 +522,67 @@ static int basicUnitTests(U32 const seed, double compressibility)
     {   /* ensure CNBuffSize <= decompressBound */
         unsigned long long const bound = ZSTD_decompressBound(compressedBuffer, compressedBufferSize);
         if (CNBuffSize > bound) goto _output_error;
+    }
+    DISPLAYLEVEL(3, "OK \n");
+
+    DISPLAYLEVEL(3, "test%3d: superblock uncompressible data, too many nocompress superblocks : ", testNb++)
+    {
+        ZSTD_CCtx* const cctx = ZSTD_createCCtx();
+        const BYTE* src = (BYTE*)CNBuffer; BYTE* dst = (BYTE*)compressedBuffer;
+        size_t srcSize = 321656; size_t dstCapacity = ZSTD_compressBound(srcSize);
+
+        /* This is the number of bytes to stream before ending. This value
+         * was obtained by trial and error :/. */
+
+        const size_t streamCompressThreshold = 161792;
+        const size_t streamCompressDelta = 1024;
+
+        /* The first 1/5 of the buffer is compressible and the last 4/5 is
+         * uncompressible. This is an approximation of the type of data
+         * the fuzzer generated to catch this bug. Streams like this were making
+         * zstd generate noCompress superblocks (which are larger than the src
+         * they come from). Do this enough times, and we'll run out of room
+         * and throw a dstSize_tooSmall error. */
+
+        const size_t compressiblePartSize = srcSize/5;
+        const size_t uncompressiblePartSize = srcSize-compressiblePartSize;
+        RDG_genBuffer(CNBuffer, compressiblePartSize, 0.5, 0.5, seed);
+        RDG_genBuffer((BYTE*)CNBuffer+compressiblePartSize, uncompressiblePartSize, 0, 0, seed);
+
+        /* Setting target block size so that superblock is used */
+
+        assert(cctx != NULL);
+        ZSTD_CCtx_setParameter(cctx, ZSTD_c_targetCBlockSize, 81);
+
+        { size_t read;
+          for (read = 0; read < streamCompressThreshold; read += streamCompressDelta) {
+            ZSTD_inBuffer in = {src, streamCompressDelta, 0};
+            ZSTD_outBuffer out = {dst, dstCapacity, 0};
+            assert(!ZSTD_isError(ZSTD_compressStream2(cctx, &out, &in, ZSTD_e_continue)));
+            assert(!ZSTD_isError(ZSTD_compressStream2(cctx, &out, &in, ZSTD_e_end)));
+            src += streamCompressDelta; srcSize -= streamCompressDelta;
+            dst += out.pos; dstCapacity -= out.pos;}}
+
+        /* This is trying to catch a dstSize_tooSmall error */
+
+        { ZSTD_inBuffer in = {src, srcSize, 0};
+          ZSTD_outBuffer out = {dst, dstCapacity, 0};
+          assert(!ZSTD_isError(ZSTD_compressStream2(cctx, &out, &in, ZSTD_e_end)));}
+        ZSTD_freeCCtx(cctx);
+    }
+    DISPLAYLEVEL(3, "OK \n");
+
+    RDG_genBuffer(CNBuffer, CNBuffSize, compressibility, 0. /*auto*/, seed);
+    DISPLAYLEVEL(3, "test%3d: superblock enough room for checksum : ", testNb++)
+    {
+        /* This tests whether or not we leave enough room for the checksum at the end
+         * of the dst buffer. The bug that motivated this test was found by the
+         * stream_round_trip fuzzer but this crashes for the same reason and is
+         * far more compact than re-creating the stream_round_trip fuzzer's code path */
+        ZSTD_CCtx *cctx = ZSTD_createCCtx();
+        ZSTD_CCtx_setParameter(cctx, ZSTD_c_targetCBlockSize, 64);
+        assert(!ZSTD_isError(ZSTD_compress2(cctx, compressedBuffer, 1339, CNBuffer, 1278)));
+        ZSTD_freeCCtx(cctx);
     }
     DISPLAYLEVEL(3, "OK \n");
 
