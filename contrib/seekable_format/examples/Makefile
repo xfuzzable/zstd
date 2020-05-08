@@ -7,8 +7,6 @@
 # in the COPYING file in the root directory of this source tree).
 # ################################################################
 
-# This Makefile presumes libzstd is built, using `make` in / or /lib/
-
 ZSTDLIB_PATH = ../../../lib
 ZSTDLIB_NAME = libzstd.a
 ZSTDLIB = $(ZSTDLIB_PATH)/$(ZSTDLIB_NAME)
@@ -28,25 +26,41 @@ all: seekable_compression seekable_decompression seekable_decompression_mem \
 	parallel_processing
 
 $(ZSTDLIB):
-	make -C $(ZSTDLIB_PATH) $(ZSTDLIB_NAME)
+	$(MAKE) -C $(ZSTDLIB_PATH) $(ZSTDLIB_NAME)
 
 seekable_compression : seekable_compression.c $(SEEKABLE_OBJS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) -o $@
 
 seekable_decompression : seekable_decompression.c $(SEEKABLE_OBJS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) -o $@
 
 seekable_decompression_mem : seekable_decompression_mem.c $(SEEKABLE_OBJS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) -o $@
 
+parallel_processing : LDFLAGS += -pthread
 parallel_processing : parallel_processing.c $(SEEKABLE_OBJS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) -o $@ -pthread
 
+parallel_compression : LDFLAGS += -pthread
 parallel_compression : parallel_compression.c $(SEEKABLE_OBJS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) -o $@ -pthread
+
+CP   ?= cp
+CAT  ?= cat
+HEAD ?= head
+TAIL ?= tail
+CMP  ?= cmp
+test : all parallel_compression
+	$(CP) seekable_compression tmp
+	./seekable_compression tmp 4096
+	./seekable_decompression tmp.zst 6000 32000 > tmp1
+	$(CAT) tmp | $(HEAD) -c 32000 | $(TAIL) -c 26000 > tmp2
+	$(CMP) tmp1 tmp2
+	./seekable_decompression_mem tmp.zst 6000 32000 > tmp3
+	$(CMP) tmp3 tmp2
+	./parallel_processing tmp.zst 2
+	./parallel_compression tmp 4096 2
+	./seekable_decompression tmp.zst 6000 32000 > tmp1
+	$(CMP) tmp1 tmp2
+
 
 clean:
-	@rm -f core *.o tmp* result* *.zst \
+	@$(RM) core *.o tmp* result* *.zst \
 		seekable_compression seekable_decompression \
 		seekable_decompression_mem \
 		parallel_processing parallel_compression

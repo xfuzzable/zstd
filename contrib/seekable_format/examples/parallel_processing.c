@@ -87,7 +87,8 @@ static size_t fclose_orDie(FILE* file)
     exit(6);
 }
 
-static void fseek_orDie(FILE* file, long int offset, int origin) {
+static void fseek_orDie(FILE* file, long int offset, int origin)
+{
     if (!fseek(file, offset, origin)) {
         if (!fflush(file)) return;
     }
@@ -160,7 +161,7 @@ static void sumFile_orDie(const char* fname, int nbThreads)
     unsigned long long total = 0;
 
     for (fnb = 0; fnb < numFrames; fnb++) {
-        while (!jobs[fnb].done) SLEEP(5); /* wake up every 5 milliseconds to check */
+        while (!jobs[fnb].done) SLEEP(5);  /* wake up every 5 milliseconds to check */
         total += jobs[fnb].sum;
     }
 
@@ -184,8 +185,7 @@ int main(int argc, const char** argv)
         return 1;
     }
 
-    {
-        const char* const inFilename = argv[1];
+    {   const char* const inFilename = argv[1];
         int const nbThreads = atoi(argv[2]);
         sumFile_orDie(inFilename, nbThreads);
     }
