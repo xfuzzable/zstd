@@ -22,6 +22,8 @@ libzstd:
 		--xxh64-prefix 'xxh64' \
 		--rewrite-include '<limits\.h>=<linux/limits.h>' \
 		--rewrite-include '<stddef\.h>=<linux/types.h>' \
+		--rewrite-include '"\.\./zstd.h"=<linux/zstd.h>' \
+		--rewrite-include '"(\.\./common/)?zstd_errors.h"=<linux/zstd_errors.h>' \
 		-DZSTD_NO_INTRINSICS \
 		-DZSTD_NO_UNUSED_FUNCTIONS \
 		-DZSTD_LEGACY_SUPPORT=0 \
@@ -46,6 +48,8 @@ libzstd:
 		-U_WIN32 \
 		-RZSTDLIB_VISIBILITY= \
 		-RZSTDERRORLIB_VISIBILITY=
+	mv linux/lib/zstd/zstd.h linux/include/linux/zstd_lib.h
+	mv linux/lib/zstd/common/zstd_errors.h linux/include/linux/
 	cp linux_zstd.h linux/include/linux/zstd.h
 	cp zstd_compress_module.c linux/lib/zstd
 	cp zstd_decompress_module.c linux/lib/zstd
@@ -60,15 +64,18 @@ import: libzstd
 	rm -f $(LINUX)/include/linux/zstd_errors.h
 	rm -rf $(LINUX)/lib/zstd
 	cp linux/include/linux/zstd.h $(LINUX)/include/linux
+	cp linux/include/linux/zstd_lib.h $(LINUX)/include/linux
+	cp linux/include/linux/zstd_errors.h $(LINUX)/include/linux
 	cp -r linux/lib/zstd $(LINUX)/lib
 
 import-upstream:
 	rm -rf $(LINUX)/lib/zstd
 	mkdir $(LINUX)/lib/zstd
-	cp ../../lib/zstd.h $(LINUX)/lib/zstd
+	cp ../../lib/zstd.h $(LINUX)/include/linux/zstd_lib.h
 	cp -r ../../lib/common $(LINUX)/lib/zstd
 	cp -r ../../lib/compress $(LINUX)/lib/zstd
 	cp -r ../../lib/decompress $(LINUX)/lib/zstd
+	mv $(LINUX)/lib/zstd/common/zstd_errors.h $(LINUX)/include/linux
 	rm $(LINUX)/lib/zstd/common/threading.*
 	rm $(LINUX)/lib/zstd/common/pool.*
 	rm $(LINUX)/lib/zstd/common/xxhash.*
